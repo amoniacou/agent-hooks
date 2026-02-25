@@ -1,0 +1,28 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'optparse'
+require_relative '../lib/agent_hook_validator/installer'
+
+options = { target: 'claude', project_dir: Dir.pwd, agent: nil }
+
+OptionParser.new do |opts|
+  opts.banner = 'Usage: install [options]'
+  opts.on('--target TARGET', %w[claude gemini openai all],
+          'Target agent hook (claude, gemini, openai, all)') do |t|
+    options[:target] = t
+  end
+  opts.on('--project-dir DIR', 'Project directory (default: current directory)') do |d|
+    options[:project_dir] = File.expand_path(d)
+  end
+  opts.on('--agent AGENT', %w[claude gemini openai],
+          'Agent to use for validation (default: matches target)') do |a|
+    options[:agent] = a
+  end
+  opts.on('-h', '--help', 'Prints this help') do
+    puts opts
+    exit
+  end
+end.parse!
+
+AgentHookValidator::Installer.new(options).run

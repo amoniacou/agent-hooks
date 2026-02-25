@@ -1,0 +1,39 @@
+Act as a Senior Software Engineer and Security Lead.
+Please review the following repository changes.
+
+### Core Objectives:
+1. Ensure project best practices (DRY, SOLID, KISS).
+2. Detect potential security vulnerabilities (OWASP Top 10).
+3. Verify test presence and integrity (no fake/empty mocks).
+
+<%- if changed_files.any? { |f| f.end_with?('.rb') } -%>
+### Ruby-Specific Guidelines:
+- Follow the Ruby Style Guide (RuboCop conventions).
+- Check for common Ruby pitfalls like unsafe `eval` or `send`.
+- Ensure proper error handling (avoid rescue Exception).
+<%- end -%>
+
+<%- if changed_files.any? { |f| f.end_with?('.js', '.ts') } -%>
+### JS/TS-Specific Guidelines:
+- Ensure proper typing where possible.
+- Check for prototype pollution or insecure dependencies.
+<%- end -%>
+
+### Test Verification Plan:
+- Are there new tests for the added logic?
+- **CRITICAL**: Tests must perform real assertions.
+- **CRITICAL**: Trivial mocks (e.g., `allow(obj).to receive(:method).and_return(val)`) without testing side effects are NOT allowed.
+
+### Files Changed:
+<% changed_files.each do |file| -%>
+- <%= file %>
+<% end -%>
+
+### DIFF DATA:
+```diff
+<%= diff %>
+```
+
+### Response Format:
+- If you find any CRITICAL issue (security breach, missing tests, or trivial mocks), your response MUST start with: "CRITICAL: [Issue Summary]".
+- Otherwise, provide a concise summary of findings and "QUANTIFIABLE METRICS" (e.g., Code Quality Score: X/10).

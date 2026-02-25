@@ -1,0 +1,26 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'optparse'
+require_relative '../lib/agent_hook_validator'
+
+options = { agent: 'claude', template: nil }
+
+OptionParser.new do |opts|
+  opts.banner = 'Usage: agent-hook-validator [options]'
+
+  opts.on('-a', '--agent NAME', 'Agent name (claude, openai, etc.)') do |a|
+    options[:agent] = a
+  end
+
+  opts.on('-t', '--template PATH', 'Path to ERB template') do |t|
+    options[:template] = File.expand_path(t)
+  end
+
+  opts.on('-h', '--help', 'Prints this help') do
+    puts opts
+    exit
+  end
+end.parse!
+
+AgentHookValidator::Runner.new(options).run

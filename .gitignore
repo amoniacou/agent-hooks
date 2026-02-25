@@ -1,0 +1,9 @@
+/.bundle/
+/vendor/bundle
+/Gemfile.lock
+/coverage/
+/spec/reports/
+/tmp/
+*.gem
+*.rbc
+.byebug_history

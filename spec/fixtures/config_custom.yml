@@ -1,0 +1,10 @@
+git:
+  diff_mode: "cached"
+  max_diff_lines: 500
+
+agent:
+  name: "claude"
+  timeout_seconds: 60
+
+decision:
+  block_on_agent_failure: true
