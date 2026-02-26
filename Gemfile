@@ -2,9 +2,7 @@
 
 source 'https://rubygems.org'
 
-gem 'json'
-gem 'open3'
-gem 'yaml'
+gemspec
 
 group :development, :test do
   gem 'rake'

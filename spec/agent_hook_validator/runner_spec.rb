@@ -57,8 +57,10 @@ RSpec.describe AgentHookValidator::Runner do
           .and_return(['false', 'fatal: not a git repository', failed_status])
       end
 
-      it 'allows with exit code 0' do
+      it 'allows with exit code 0 and outputs allow decision' do
         expect(runner.run).to eq(0)
+        parsed = JSON.parse(stdout.string)
+        expect(parsed['decision']).to eq('allow')
       end
     end
 
@@ -67,8 +69,10 @@ RSpec.describe AgentHookValidator::Runner do
         stub_git(changed_files: [])
       end
 
-      it 'allows with exit code 0' do
+      it 'allows with exit code 0 and outputs allow decision' do
         expect(runner.run).to eq(0)
+        parsed = JSON.parse(stdout.string)
+        expect(parsed['decision']).to eq('allow')
       end
     end
 
@@ -207,6 +211,8 @@ RSpec.describe AgentHookValidator::Runner do
 
         it 'allows when all files are excluded' do
           expect(runner.run).to eq(0)
+          parsed = JSON.parse(stdout.string)
+          expect(parsed['decision']).to eq('allow')
         end
       end
 
@@ -251,7 +257,7 @@ RSpec.describe AgentHookValidator::Runner do
     context 'when cwd points to a non-existent path' do
       let(:input_json) { JSON.generate({ 'cwd' => '/nonexistent/path', 'hook_event_name' => 'TaskCompleted' }) }
 
-      it 'falls back to Dir.pwd' do
+      it 'falls back to Dir.pwd and outputs allow decision' do
         allow(Open3).to receive(:capture3)
           .with('git', 'rev-parse', '--is-inside-work-tree', chdir: Dir.pwd)
           .and_return(['true', '', success_status])
@@ -260,19 +266,23 @@ RSpec.describe AgentHookValidator::Runner do
           .and_return(['', '', nil])
 
         expect(runner.run).to eq(0)
+        parsed = JSON.parse(stdout.string)
+        expect(parsed['decision']).to eq('allow')
       end
     end
 
     context 'when cwd contains path traversal' do
       let(:input_json) { JSON.generate({ 'cwd' => '/tmp/../etc', 'hook_event_name' => 'TaskCompleted' }) }
 
-      it 'resolves to the real path' do
+      it 'resolves to the real path and outputs allow decision' do
         # /tmp/../etc resolves to /etc via File.realpath
         allow(Open3).to receive(:capture3)
           .with('git', 'rev-parse', '--is-inside-work-tree', chdir: '/etc')
           .and_return(['false', 'fatal: not a git repository', failed_status])
 
         expect(runner.run).to eq(0)
+        parsed = JSON.parse(stdout.string)
+        expect(parsed['decision']).to eq('allow')
       end
     end
   end

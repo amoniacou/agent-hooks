@@ -1,0 +1,14 @@
+# Code Validation
+
+Review the current code changes using an AI agent validator.
+
+Validation output:
+
+!`agent-hook-validator -a $ARGUMENTS`
+
+Analyze the validation output above and provide:
+1. Summary of findings — what passed and what failed
+2. Files requiring attention with specific line references
+3. Recommended fixes for each issue found
+
+If no issues were found, confirm the code is clean.

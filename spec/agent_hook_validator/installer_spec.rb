@@ -13,157 +13,79 @@ RSpec.describe AgentHookValidator::Installer do
 
   after { FileUtils.remove_entry(tmpdir) }
 
-  describe '#read_json_settings' do
-    it 'reads valid JSON file' do
-      path = File.join(tmpdir, 'test.json')
-      File.write(path, '{"key": "value"}')
-
-      result = installer.send(:read_json_settings, path)
-      expect(result).to eq('key' => 'value')
-    end
-
-    it 'returns empty hash for missing file' do
-      result = installer.send(:read_json_settings, File.join(tmpdir, 'nonexistent.json'))
-      expect(result).to eq({})
-    end
-
-    it 'returns empty hash for invalid JSON' do
-      path = File.join(tmpdir, 'bad.json')
-      File.write(path, 'not json at all')
-
-      result = installer.send(:read_json_settings, path)
-      expect(result).to eq({})
-    end
-  end
-
-  describe '#write_json_settings' do
-    it 'writes pretty JSON to file' do
-      path = File.join(tmpdir, 'output.json')
-      installer.send(:write_json_settings, path, { 'a' => 1 })
-
-      content = File.read(path)
-      expect(JSON.parse(content)).to eq('a' => 1)
-      expect(content).to include("\n") # pretty-printed
-    end
-
-    it 'creates parent directories' do
-      path = File.join(tmpdir, 'deep', 'nested', 'settings.json')
-      installer.send(:write_json_settings, path, { 'ok' => true })
-
-      expect(File.exist?(path)).to be true
-      expect(JSON.parse(File.read(path))).to eq('ok' => true)
-    end
-  end
-
   describe '#install_claude' do
-    it 'creates hooks structure in settings.local.json' do
-      installer.install_claude(tmpdir, 'claude')
+    it 'copies validate.md to .claude/commands/' do
+      installer.run
 
-      settings_path = File.join(tmpdir, '.claude', 'settings.local.json')
-      settings = JSON.parse(File.read(settings_path))
-
-      expect(settings['hooks']['TaskCompleted']).to be_an(Array)
-      expect(settings['hooks']['TaskCompleted'].length).to eq(1)
-
-      hook_entry = settings['hooks']['TaskCompleted'].first
-      expect(hook_entry['hooks'].first['type']).to eq('command')
-      expect(hook_entry['hooks'].first['command']).to include('agent-hook-validator')
-      expect(hook_entry['hooks'].first['command']).to include('-a claude')
-      expect(hook_entry['hooks'].first['timeout']).to eq(360)
+      dest = File.join(tmpdir, '.claude', 'commands', 'validate.md')
+      expect(File.exist?(dest)).to be true
+      expect(File.read(dest)).to include('agent-hook-validator')
     end
 
-    it 'replaces existing agent-hook-validator hook' do
-      settings_path = File.join(tmpdir, '.claude', 'settings.local.json')
-      FileUtils.mkdir_p(File.dirname(settings_path))
-      old_hook = { 'type' => 'command', 'command' => 'old agent-hook-validator cmd' }
-      existing = { 'hooks' => { 'TaskCompleted' => [{ 'hooks' => [old_hook] }] } }
-      File.write(settings_path, JSON.pretty_generate(existing))
+    it 'creates .claude/commands/ directory if missing' do
+      installer.run
 
-      installer.install_claude(tmpdir, 'gemini')
-
-      settings = JSON.parse(File.read(settings_path))
-      expect(settings['hooks']['TaskCompleted'].length).to eq(1)
-      expect(settings['hooks']['TaskCompleted'].first['hooks'].first['command']).to include('-a gemini')
+      commands_dir = File.join(tmpdir, '.claude', 'commands')
+      expect(Dir.exist?(commands_dir)).to be true
     end
 
-    it 'preserves other hooks' do
-      settings_path = File.join(tmpdir, '.claude', 'settings.local.json')
-      FileUtils.mkdir_p(File.dirname(settings_path))
-      other_hook = { 'type' => 'command', 'command' => 'other-tool' }
-      existing = { 'hooks' => { 'TaskCompleted' => [{ 'hooks' => [other_hook] }] } }
-      File.write(settings_path, JSON.pretty_generate(existing))
+    it 'overwrites existing validate.md' do
+      commands_dir = File.join(tmpdir, '.claude', 'commands')
+      FileUtils.mkdir_p(commands_dir)
+      File.write(File.join(commands_dir, 'validate.md'), 'old content')
 
-      installer.install_claude(tmpdir, 'claude')
+      installer.run
 
-      settings = JSON.parse(File.read(settings_path))
-      expect(settings['hooks']['TaskCompleted'].length).to eq(2)
+      content = File.read(File.join(commands_dir, 'validate.md'))
+      expect(content).not_to eq('old content')
+      expect(content).to include('agent-hook-validator')
+    end
+
+    it 'defaults project_dir to Dir.pwd when nil' do
+      allow(Dir).to receive(:pwd).and_return(tmpdir)
+      nil_dir_installer = described_class.new(
+        { target: 'claude', project_dir: nil, agent: nil },
+        stdout: stdout
+      )
+      nil_dir_installer.run
+
+      dest = File.join(tmpdir, '.claude', 'commands', 'validate.md')
+      expect(File.exist?(dest)).to be true
     end
   end
 
   describe '#install_gemini' do
-    let(:gemini_home) { File.join(tmpdir, '.gemini') }
+    let(:options) { { target: 'gemini', project_dir: tmpdir, agent: nil } }
+    let(:gemini_commands) { File.join(tmpdir, '.gemini', 'commands') }
 
     before do
       allow(File).to receive(:expand_path).and_call_original
-      allow(File).to receive(:expand_path).with('~/.gemini/settings.json')
-                                          .and_return(File.join(gemini_home, 'settings.json'))
+      allow(File).to receive(:expand_path).with('~/.gemini/commands')
+                                          .and_return(gemini_commands)
     end
 
-    it 'creates AfterAgent hook in settings' do
-      installer.install_gemini('gemini')
+    it 'copies validate.toml to ~/.gemini/commands/' do
+      installer.run
 
-      settings = JSON.parse(File.read(File.join(gemini_home, 'settings.json')))
-      expect(settings['hooks']['AfterAgent']).to be_an(Array)
-      expect(settings['hooks']['AfterAgent'].length).to eq(1)
-
-      hook = settings['hooks']['AfterAgent'].first
-      expect(hook['name']).to eq('agent-hook-validator')
-      expect(hook['type']).to eq('command')
-      expect(hook['command']).to include('-a gemini')
+      dest = File.join(gemini_commands, 'validate.toml')
+      expect(File.exist?(dest)).to be true
+      expect(File.read(dest)).to include('agent-hook-validator')
     end
 
-    it 'replaces existing agent-hook-validator hook' do
-      FileUtils.mkdir_p(gemini_home)
-      old_hook = { 'name' => 'agent-hook-validator', 'command' => 'old' }
-      existing = { 'hooks' => { 'AfterAgent' => [old_hook] } }
-      File.write(File.join(gemini_home, 'settings.json'), JSON.pretty_generate(existing))
+    it 'creates commands directory if missing' do
+      installer.run
 
-      installer.install_gemini('claude')
-
-      settings = JSON.parse(File.read(File.join(gemini_home, 'settings.json')))
-      expect(settings['hooks']['AfterAgent'].length).to eq(1)
-      expect(settings['hooks']['AfterAgent'].first['command']).to include('-a claude')
+      expect(Dir.exist?(gemini_commands)).to be true
     end
   end
 
   describe '#install_openai' do
+    let(:options) { { target: 'openai', project_dir: tmpdir, agent: nil } }
+
     it 'outputs manual configuration message' do
-      installer.install_openai('openai')
+      installer.run
 
       expect(stdout.string).to include('not yet supported')
-    end
-  end
-
-  describe 'command injection prevention' do
-    it 'escapes shell metacharacters in agent_name' do
-      installer.install_claude(tmpdir, '; rm -rf /')
-
-      settings_path = File.join(tmpdir, '.claude', 'settings.local.json')
-      settings = JSON.parse(File.read(settings_path))
-
-      command = settings['hooks']['TaskCompleted'].first['hooks'].first['command']
-      expect(command).not_to include('; rm -rf /')
-      expect(command).to include('\;\ rm\ -rf\ /')
-    end
-  end
-
-  describe '#install_claude' do
-    it 'defaults project_dir to Dir.pwd when nil' do
-      allow(Dir).to receive(:pwd).and_return(tmpdir)
-      installer.install_claude(nil, 'claude')
-
-      settings_path = File.join(tmpdir, '.claude', 'settings.local.json')
-      expect(File.exist?(settings_path)).to be true
     end
   end
 
@@ -178,18 +100,18 @@ RSpec.describe AgentHookValidator::Installer do
       expect(stdout.string).to include('Done')
     end
 
-    it 'installs claude hook by default' do
+    it 'installs claude command by default' do
       installer.run
 
-      settings_path = File.join(tmpdir, '.claude', 'settings.local.json')
-      expect(File.exist?(settings_path)).to be true
+      dest = File.join(tmpdir, '.claude', 'commands', 'validate.md')
+      expect(File.exist?(dest)).to be true
     end
 
     it 'installs all targets when target is all' do
-      gemini_home = File.join(tmpdir, '.gemini')
+      gemini_commands = File.join(tmpdir, '.gemini', 'commands')
       allow(File).to receive(:expand_path).and_call_original
-      allow(File).to receive(:expand_path).with('~/.gemini/settings.json')
-                                          .and_return(File.join(gemini_home, 'settings.json'))
+      allow(File).to receive(:expand_path).with('~/.gemini/commands')
+                                          .and_return(gemini_commands)
 
       all_installer = described_class.new(
         { target: 'all', project_dir: tmpdir, agent: nil },
@@ -197,9 +119,14 @@ RSpec.describe AgentHookValidator::Installer do
       )
       all_installer.run
 
-      expect(File.exist?(File.join(tmpdir, '.claude', 'settings.local.json'))).to be true
-      expect(File.exist?(File.join(gemini_home, 'settings.json'))).to be true
+      expect(File.exist?(File.join(tmpdir, '.claude', 'commands', 'validate.md'))).to be true
+      expect(File.exist?(File.join(gemini_commands, 'validate.toml'))).to be true
       expect(stdout.string).to include('not yet supported')
+    end
+
+    it 'prints done message with /validate usage hint' do
+      installer.run
+      expect(stdout.string).to include('/validate')
     end
   end
 end

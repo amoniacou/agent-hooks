@@ -1,19 +1,16 @@
 # Agent Hook Validator
 
-A pre-commit / post-action hook that uses an AI agent (Claude, Gemini, or Codex) to review your code changes before they land.
+A code review tool that uses an AI agent (Claude, Gemini, or Codex) to review your code changes before they land.
 
-When an AI coding assistant (Claude Code, Gemini CLI, Codex CLI) finishes a turn, this hook intercepts the result, runs `git diff` through a second AI reviewer, and either **allows** the change or **blocks** it with actionable feedback.
+When invoked via a `/validate` slash command inside an AI coding assistant (Claude Code, Gemini CLI), this tool runs `git diff` through a second AI reviewer and reports issues with actionable feedback.
 
 ## How It Works
 
 ```
-Agent finishes a turn
+You type /validate gemini
         │
         ▼
-  Hook fires (TaskCompleted / AfterAgent)
-        │
-        ▼
-  git diff HEAD → filter excluded patterns → truncate
+  git diff HEAD → filter excluded patterns
         │
         ▼
   Render prompt template (validation.erb)
@@ -22,22 +19,12 @@ Agent finishes a turn
   Pipe prompt to reviewer agent CLI (claude / gemini / codex)
         │
         ▼
-  Response starts with "CRITICAL:" ?
-       ╱╲
-     yes  no
-      │    │
-      ▼    ▼
-   retry  allow
-  (block) (pass)
+  Parse response → block or allow
 ```
-
-**`retry`** feeds the review back to the coding agent so it can fix the issues.
-**`allow`** lets the turn through, optionally injecting a review summary.
 
 ## Requirements
 
 - Ruby 3.2+
-- Bundler
 - At least one agent CLI installed:
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`)
   - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini`)
@@ -47,73 +34,51 @@ Agent finishes a turn
 ## Installation
 
 ```bash
-git clone https://github.com/your-org/agent-hooks.git
-cd agent-hooks
-bundle install
+gem install agent_hook_validator
 ```
 
-### Register the hook automatically
+Or add to your Gemfile:
+
+```ruby
+gem 'agent_hook_validator'
+```
+
+### Register the /validate command
 
 ```bash
-# Install for Claude Code (writes to .claude/settings.json)
-ruby bin/install --target claude
+# Install for Claude Code (copies to .claude/commands/)
+agent-hook-install --target claude
 
-# Install for Gemini CLI (writes to ~/.gemini/settings.json)
-ruby bin/install --target gemini
+# Install for Gemini CLI (copies to ~/.gemini/commands/)
+agent-hook-install --target gemini
 
 # Install for all supported targets
-ruby bin/install --target all
-
-# Use a different agent for reviewing (e.g. Gemini reviews Claude's output)
-ruby bin/install --target claude --agent gemini
+agent-hook-install --target all
 ```
+
+### Usage
+
+Inside Claude Code:
+
+```
+/validate gemini
+```
+
+Inside Gemini CLI:
+
+```
+/validate claude
+```
+
+The argument is the name of the reviewer agent. For example, use `gemini` to have Gemini review Claude's output, or `claude` to have Claude review Gemini's output.
 
 ### Install options
 
 ```
-Usage: install [options]
+Usage: agent-hook-install [options]
   --target TARGET       claude | gemini | openai | all  (default: claude)
   --project-dir DIR     Project directory (default: current directory)
-  --agent AGENT         Agent for validation: claude | gemini | openai
   -h, --help
-```
-
-### Manual configuration
-
-**Claude Code** — add to `.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "TaskCompleted": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bundle exec ruby /path/to/agent-hooks/bin/agent-hook-validator -a gemini",
-            "timeout": 180
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-**Gemini CLI** — add to `~/.gemini/settings.json`:
-
-```json
-{
-  "hooks": {
-    "AfterAgent": [
-      {
-        "name": "agent-hook-validator",
-        "type": "command",
-        "command": "bundle exec ruby /path/to/agent-hooks/bin/agent-hook-validator -a claude"
-      }
-    ]
-  }
-}
 ```
 
 ## Configuration
@@ -138,6 +103,7 @@ agent:
 
 decision:
   block_on_agent_failure: false  # false = fail-open, true = fail-closed
+  min_quality_score: 9           # Quality score threshold (1-10)
 ```
 
 ### Diff modes
@@ -190,7 +156,7 @@ The validator reads a JSON payload from stdin and writes a JSON decision to stdo
 ```
 
 ```json
-{"decision": "retry", "reason": "AgentHookValidator (gemini) found issues:\n\nCRITICAL: ..."}
+{"decision": "block", "reason": "AgentHookValidator (gemini) found issues:\n\nCRITICAL: ..."}
 ```
 
 ## Development
@@ -213,8 +179,13 @@ bundle exec rubocop
 
 ```
 ├── bin/
-│   ├── agent-hook-validator    # Main hook entry point
-│   └── install                 # Hook installer
+│   ├── agent-hook-validator    # Main CLI entry point
+│   └── agent-hook-install      # Slash command installer
+├── commands/
+│   ├── claude/
+│   │   └── validate.md         # Claude Code /validate command
+│   └── gemini/
+│       └── validate.toml       # Gemini CLI /validate command
 ├── config/
 │   └── default.yml             # Default configuration
 ├── lib/
@@ -224,7 +195,8 @@ bundle exec rubocop
 │       ├── agent_factory.rb    # Maps agent name → class
 │       ├── config.rb           # YAML config loader with deep-merge
 │       ├── errors.rb           # Custom error hierarchy
-│       ├── installer.rb        # Writes hooks into agent settings files
+│       ├── installer.rb        # Copies slash commands into agent config dirs
+│       ├── version.rb          # Gem version
 │       └── template_renderer.rb
 ├── templates/
 │   └── validation.erb          # Prompt template sent to the reviewer

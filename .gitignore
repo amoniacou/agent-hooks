@@ -7,3 +7,5 @@
 *.gem
 *.rbc
 .byebug_history
+.claude/settings.local.json
+.agent-hook-validator.log

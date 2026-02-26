@@ -2,7 +2,6 @@
 
 require 'json'
 require 'fileutils'
-require 'shellwords'
 
 module AgentHookValidator
   class Installer
@@ -17,74 +16,57 @@ module AgentHookValidator
       @options = options
       @stdout = stdout
       @gem_root = File.expand_path('../..', __dir__)
-      escaped_path = Shellwords.shellescape(File.join(@gem_root, 'bin', 'agent-hook-validator'))
-      @hook_cmd = "bundle exec ruby #{escaped_path}"
     end
 
     def run
       targets = options[:target] == 'all' ? %w[claude gemini openai] : [options[:target]]
 
       targets.each do |target|
-        agent_name = options[:agent] || target
         case target
-        when 'claude' then install_claude(options[:project_dir], agent_name)
-        when 'gemini' then install_gemini(agent_name)
-        when 'openai' then install_openai(agent_name)
+        when 'claude' then install_claude(options[:project_dir])
+        when 'gemini' then install_gemini
+        when 'openai' then install_openai
         else log("Unknown target: #{target}, skipping.", RED)
         end
       end
 
-      log 'Done. Run your agent session to test the hook.', BLUE
-    end
-
-    def install_claude(project_dir, agent_name)
-      project_dir ||= Dir.pwd
-      settings_path = File.join(project_dir, '.claude', 'settings.local.json')
-      settings = read_json_settings(settings_path)
-
-      settings['hooks'] ||= {}
-      settings['hooks']['TaskCompleted'] ||= []
-
-      settings['hooks']['TaskCompleted'].reject! do |entry|
-        hooks = entry['hooks'] || []
-        hooks.any? { |h| h['command']&.include?('agent-hook-validator') }
-      end
-
-      settings['hooks']['TaskCompleted'] << {
-        'hooks' => [{
-          'type' => 'command',
-          'command' => "#{@hook_cmd} -a #{Shellwords.shellescape(agent_name)}",
-          'timeout' => 360
-        }]
-      }
-
-      write_json_settings(settings_path, settings)
-      log "Registered Claude Code TaskCompleted hook in #{settings_path}"
-    end
-
-    def install_gemini(agent_name)
-      settings_path = File.expand_path('~/.gemini/settings.json')
-      settings = read_json_settings(settings_path)
-
-      settings['hooks'] ||= {}
-      settings['hooks']['AfterAgent'] ||= []
-      settings['hooks']['AfterAgent'].reject! { |h| h['name'] == 'agent-hook-validator' }
-
-      settings['hooks']['AfterAgent'] << {
-        'name' => 'agent-hook-validator',
-        'type' => 'command',
-        'command' => "#{@hook_cmd} -a #{Shellwords.shellescape(agent_name)}"
-      }
-
-      write_json_settings(settings_path, settings)
-      log "Registered Gemini AfterAgent hook in #{settings_path}"
-    end
-
-    def install_openai(_agent_name)
-      log 'OpenAI hook installation is not yet supported. Configure manually.', BLUE
+      log 'Done. Use /validate <agent-name> in your agent session.', BLUE
     end
 
     private
+
+    def install_claude(project_dir)
+      project_dir ||= Dir.pwd
+      commands_dir = File.join(project_dir, '.claude', 'commands')
+      source = File.join(@gem_root, 'commands', 'claude', 'validate.md')
+
+      unless File.exist?(source)
+        log "Source command file not found: #{source}", RED
+        return
+      end
+
+      FileUtils.mkdir_p(commands_dir)
+      FileUtils.cp(source, File.join(commands_dir, 'validate.md'))
+      log "Installed /validate command in #{commands_dir}/validate.md"
+    end
+
+    def install_gemini
+      commands_dir = File.expand_path('~/.gemini/commands')
+      source = File.join(@gem_root, 'commands', 'gemini', 'validate.toml')
+
+      unless File.exist?(source)
+        log "Source command file not found: #{source}", RED
+        return
+      end
+
+      FileUtils.mkdir_p(commands_dir)
+      FileUtils.cp(source, File.join(commands_dir, 'validate.toml'))
+      log "Installed /validate command in #{commands_dir}/validate.toml"
+    end
+
+    def install_openai
+      log 'OpenAI Codex custom commands are not yet supported. Configure manually.', BLUE
+    end
 
     def read_json_settings(path)
       return {} unless File.exist?(path)

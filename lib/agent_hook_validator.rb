@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'json'
+require_relative 'agent_hook_validator/version'
 require 'open3'
 require_relative 'agent_hook_validator/errors'
 require_relative 'agent_hook_validator/config'
