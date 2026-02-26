@@ -58,19 +58,15 @@ agent-hook-install --target all
 
 ### Usage
 
-Inside Claude Code:
+Inside Claude Code or Gemini CLI:
 
 ```
-/validate gemini
+/validate                      # uses agent(s) from config
+/validate -a gemini            # single agent
+/validate -a gemini,claude     # multi-agent (parallel)
 ```
 
-Inside Gemini CLI:
-
-```
-/validate claude
-```
-
-The argument is the name of the reviewer agent. For example, use `gemini` to have Gemini review Claude's output, or `claude` to have Claude review Gemini's output.
+When no `-a` flag is given, the reviewer agent is determined by your configuration (`agent.name` or `agents:` list).
 
 ### Install options
 

@@ -4,7 +4,7 @@ Review the current code changes using an AI agent validator.
 
 Validation output:
 
-!`agent-hook-validator -v -a $ARGUMENTS`
+!`agent-hook-validator -v $ARGUMENTS`
 
 Analyze the validation output above and provide:
 1. Summary of findings — what passed and what failed
@@ -12,3 +12,5 @@ Analyze the validation output above and provide:
 3. Recommended fixes for each issue found
 
 If no issues were found, confirm the code is clean.
+
+Usage: `/validate` (uses agent from config) or `/validate -a gemini,claude` (specify agents)
