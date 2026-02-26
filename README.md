@@ -143,11 +143,32 @@ You can provide a custom template with `--template PATH`. The template has acces
 
 ```
 Usage: agent-hook-validator [options]
-  -a, --agent NAME      Agent name (claude, openai, gemini)
+  -a, --agent NAME      Agent name(s), comma-separated (e.g. gemini,claude)
   -t, --template PATH   Path to ERB template
   -c, --config PATH     Path to YAML config file
+  -v, --verbose         Print diagnostic messages to stderr
   -h, --help
 ```
+
+### Multi-agent mode
+
+Run multiple reviewers in parallel via CLI:
+
+```bash
+agent-hook-validator -a gemini,claude
+```
+
+Or configure in YAML:
+
+```yaml
+agents:
+  - name: claude
+    timeout_seconds: 120
+  - name: gemini
+    timeout_seconds: 600
+```
+
+When multiple agents are used, each runs in parallel and results are merged. If any agent blocks, the overall decision is `block`.
 
 The validator reads a JSON payload from stdin and writes a JSON decision to stdout:
 
