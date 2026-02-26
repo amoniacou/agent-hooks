@@ -4,7 +4,7 @@
 require 'optparse'
 require_relative '../lib/agent_hook_validator'
 
-options = { agent: 'claude', template: nil }
+options = { agent: nil, template: nil, config: nil }
 
 OptionParser.new do |opts|
   opts.banner = 'Usage: agent-hook-validator [options]'
@@ -17,10 +17,15 @@ OptionParser.new do |opts|
     options[:template] = File.expand_path(t)
   end
 
+  opts.on('-c', '--config PATH', 'Path to YAML config file') do |c|
+    options[:config] = File.expand_path(c)
+  end
+
   opts.on('-h', '--help', 'Prints this help') do
     puts opts
     exit
   end
 end.parse!
 
-AgentHookValidator::Runner.new(options).run
+exit_code = AgentHookValidator::Runner.new(options).run
+exit(exit_code) if exit_code&.nonzero?

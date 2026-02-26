@@ -8,22 +8,15 @@ module AgentHookValidator
     DEFAULTS = {
       'git' => {
         'diff_mode' => 'head',
-        'max_diff_lines' => 2000,
         'exclude_patterns' => ['*.lock', '*.min.js', 'vendor/**']
       },
       'agent' => {
         'name' => 'gemini',
-        'timeout_seconds' => 120
-      },
-      'thresholds' => {
-        'max_critical_issues' => 0,
-        'max_warnings' => 5,
-        'require_tests_for_new_code' => true
+        'timeout_seconds' => 300
       },
       'decision' => {
-        'block_on_critical' => true,
-        'block_on_warning_threshold' => true,
-        'block_on_agent_failure' => false
+        'block_on_agent_failure' => false,
+        'min_quality_score' => 9
       }
     }.freeze
 
@@ -69,13 +62,17 @@ module AgentHookValidator
     end
 
     private_class_method def self.deep_merge(base, override)
-      base.each_with_object(base.dup) do |(key, base_val), result|
-        next unless override.key?(key)
-
-        result[key] = if base_val.is_a?(Hash) && override[key].is_a?(Hash)
-                        deep_merge(base_val, override[key])
+      base.each_with_object({}) do |(key, base_val), result|
+        result[key] = if override.key?(key)
+                        if base_val.is_a?(Hash) && override[key].is_a?(Hash)
+                          deep_merge(base_val, override[key])
+                        else
+                          override[key]
+                        end
+                      elsif base_val.is_a?(Array)
+                        base_val.dup
                       else
-                        override[key]
+                        base_val
                       end
       end.merge(override.reject { |k, _| base.key?(k) })
     end

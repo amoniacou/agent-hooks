@@ -1,4 +1,5 @@
 {
   "session_id": "test-session-123",
-  "cwd": "/tmp/test-project"
+  "cwd": "/tmp/test-project",
+  "hook_event_name": "TaskCompleted"
 }

@@ -1,3 +1,16 @@
 {
-  "spinnerTipsEnabled": true
+  "spinnerTipsEnabled": true,
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/devil/Works/opensource/agent-hooks/bin/agent-hook-validator -a gemini"
+          }
+        ]
+      }
+    ]
+  }
 }

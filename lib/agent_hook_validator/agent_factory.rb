@@ -9,6 +9,8 @@ module AgentHookValidator
     SUPPORTED_AGENTS = %w[claude openai gemini].freeze
 
     def self.build(agent_name, timeout: 120)
+      raise ArgumentError, 'Agent name is required.' if agent_name.nil? || agent_name.empty?
+
       case agent_name.downcase
       when 'claude'
         Agents::Claude.new(timeout: timeout)

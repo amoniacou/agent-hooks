@@ -7,9 +7,15 @@ module AgentHookValidator
     class OpenAI < Base
       def call(prompt)
         execute_command(
-          ['openai', 'chat', 'create', '--model', 'gpt-4o', '--message', '-'],
+          ['codex', 'exec', '-'],
           stdin_data: prompt
         )
+      end
+
+      private
+
+      def agent_label
+        'Codex'
       end
     end
   end

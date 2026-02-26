@@ -6,6 +6,8 @@ Please review the following repository changes.
 2. Detect potential security vulnerabilities (OWASP Top 10).
 3. Verify test presence and integrity (no fake/empty mocks).
 
+You have access to the repository. Read the files you need to review.
+
 <%- if changed_files.any? { |f| f.end_with?('.rb') } -%>
 ### Ruby-Specific Guidelines:
 - Follow the Ruby Style Guide (RuboCop conventions).
@@ -24,16 +26,19 @@ Please review the following repository changes.
 - **CRITICAL**: Tests must perform real assertions.
 - **CRITICAL**: Trivial mocks (e.g., `allow(obj).to receive(:method).and_return(val)`) without testing side effects are NOT allowed.
 
-### Files Changed:
+<changed_files>
 <% changed_files.each do |file| -%>
 - <%= file %>
 <% end -%>
+</changed_files>
 
-### DIFF DATA:
-```diff
-<%= diff %>
-```
+### Rules:
+- Only report issues you can directly observe. Do not speculate, infer, or fabricate issues based on code you cannot see.
+- For every issue, cite the specific file and line(s) (e.g., `app/models/user.rb:15`).
+- If you find no issues, respond with exactly: "No issues found. Code Quality Score: X/10". Do not invent minor nitpicks to fill the response.
 
 ### Response Format:
-- If you find any CRITICAL issue (security breach, missing tests, or trivial mocks), your response MUST start with: "CRITICAL: [Issue Summary]".
-- Otherwise, provide a concise summary of findings and "QUANTIFIABLE METRICS" (e.g., Code Quality Score: X/10).
+- If you find any CRITICAL issue (security breach, missing tests, or trivial mocks), start a new line with "CRITICAL:" followed by the issue summary. You may report multiple CRITICAL lines.
+- Always include exactly one line: "Code Quality Score: X/10" where X is your rating from 1 to 10.
+- If there are non-critical issues, list them under a "### Other Issues" heading with file:line citations. Omit this section entirely if there are no non-critical issues.
+- If there are no issues at all, respond with a concise summary and "Code Quality Score: X/10".

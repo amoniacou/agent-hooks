@@ -1,6 +1,5 @@
 git:
   diff_mode: "head"
-  max_diff_lines: 2000
   exclude_patterns:
     - "*.lock"
     - "*.min.js"
@@ -8,14 +7,8 @@ git:
 
 agent:
   name: "gemini"
-  timeout_seconds: 120
-
-thresholds:
-  max_critical_issues: 0
-  max_warnings: 5
-  require_tests_for_new_code: true
+  timeout_seconds: 300
 
 decision:
-  block_on_critical: true
-  block_on_warning_threshold: true
   block_on_agent_failure: false
+  min_quality_score: 9

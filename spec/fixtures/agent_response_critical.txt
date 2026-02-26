@@ -5,6 +5,8 @@ This could lead to XSS if rendered in HTML without escaping.
 
 Additionally, no tests were added for the new `full_name` method.
 
+Code Quality Score: 4/10
+
 QUANTIFIABLE METRICS:
 - Code Quality Score: 4/10
 - Security: 1 Critical Issue

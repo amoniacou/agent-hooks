@@ -2,6 +2,7 @@
 
 require 'json'
 require 'fileutils'
+require 'shellwords'
 
 module AgentHookValidator
   class Installer
@@ -16,7 +17,8 @@ module AgentHookValidator
       @options = options
       @stdout = stdout
       @gem_root = File.expand_path('../..', __dir__)
-      @hook_cmd = "bundle exec ruby #{File.join(@gem_root, 'bin', 'agent-hook-validator')}"
+      escaped_path = Shellwords.shellescape(File.join(@gem_root, 'bin', 'agent-hook-validator'))
+      @hook_cmd = "bundle exec ruby #{escaped_path}"
     end
 
     def run
@@ -28,47 +30,36 @@ module AgentHookValidator
         when 'claude' then install_claude(options[:project_dir], agent_name)
         when 'gemini' then install_gemini(agent_name)
         when 'openai' then install_openai(agent_name)
+        else log("Unknown target: #{target}, skipping.", RED)
         end
       end
 
       log 'Done. Run your agent session to test the hook.', BLUE
     end
 
-    def read_json_settings(path)
-      return {} unless File.exist?(path)
-
-      JSON.parse(File.read(path))
-    rescue JSON::ParserError
-      {}
-    end
-
-    def write_json_settings(path, settings)
-      FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, JSON.pretty_generate(settings))
-    end
-
     def install_claude(project_dir, agent_name)
-      settings_path = File.join(project_dir, '.claude', 'settings.json')
+      project_dir ||= Dir.pwd
+      settings_path = File.join(project_dir, '.claude', 'settings.local.json')
       settings = read_json_settings(settings_path)
 
       settings['hooks'] ||= {}
-      settings['hooks']['Stop'] ||= []
+      settings['hooks']['TaskCompleted'] ||= []
 
-      settings['hooks']['Stop'].reject! do |entry|
+      settings['hooks']['TaskCompleted'].reject! do |entry|
         hooks = entry['hooks'] || []
         hooks.any? { |h| h['command']&.include?('agent-hook-validator') }
       end
 
-      settings['hooks']['Stop'] << {
+      settings['hooks']['TaskCompleted'] << {
         'hooks' => [{
           'type' => 'command',
-          'command' => "#{@hook_cmd} -a #{agent_name}",
-          'timeout' => 180
+          'command' => "#{@hook_cmd} -a #{Shellwords.shellescape(agent_name)}",
+          'timeout' => 360
         }]
       }
 
       write_json_settings(settings_path, settings)
-      log "Registered Claude Code Stop hook in #{settings_path}"
+      log "Registered Claude Code TaskCompleted hook in #{settings_path}"
     end
 
     def install_gemini(agent_name)
@@ -82,7 +73,7 @@ module AgentHookValidator
       settings['hooks']['AfterAgent'] << {
         'name' => 'agent-hook-validator',
         'type' => 'command',
-        'command' => "#{@hook_cmd} -a #{agent_name}"
+        'command' => "#{@hook_cmd} -a #{Shellwords.shellescape(agent_name)}"
       }
 
       write_json_settings(settings_path, settings)
@@ -94,6 +85,19 @@ module AgentHookValidator
     end
 
     private
+
+    def read_json_settings(path)
+      return {} unless File.exist?(path)
+
+      JSON.parse(File.read(path))
+    rescue JSON::ParserError
+      {}
+    end
+
+    def write_json_settings(path, settings)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, JSON.pretty_generate(settings))
+    end
 
     def log(msg, color = GREEN)
       @stdout.puts "#{color}#{msg}#{RESET}"

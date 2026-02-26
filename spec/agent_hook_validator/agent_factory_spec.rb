@@ -29,6 +29,14 @@ RSpec.describe AgentHookValidator::AgentFactory do
       expect(agent.timeout).to eq(60)
     end
 
+    it 'raises ArgumentError when agent name is nil' do
+      expect { described_class.build(nil) }.to raise_error(ArgumentError, /Agent name is required/)
+    end
+
+    it 'raises ArgumentError when agent name is empty' do
+      expect { described_class.build('') }.to raise_error(ArgumentError, /Agent name is required/)
+    end
+
     it 'raises ArgumentError for unsupported agent' do
       expect { described_class.build('unknown') }.to raise_error(
         ArgumentError, /Unsupported agent: unknown.*claude, openai, gemini/

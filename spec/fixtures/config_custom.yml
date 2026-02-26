@@ -1,6 +1,5 @@
 git:
   diff_mode: "cached"
-  max_diff_lines: 500
 
 agent:
   name: "claude"
