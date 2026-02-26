@@ -29,6 +29,41 @@ RSpec.describe AgentHookValidator::Installer do
       expect(Dir.exist?(commands_dir)).to be true
     end
 
+    it 'creates .claude/settings.json with Bash permission' do
+      installer.run
+
+      settings_path = File.join(tmpdir, '.claude', 'settings.json')
+      expect(File.exist?(settings_path)).to be true
+      settings = JSON.parse(File.read(settings_path))
+      expect(settings['permissions']['allow']).to include('Bash(agent-hook-validator*)')
+    end
+
+    it 'preserves existing settings when adding permission' do
+      settings_dir = File.join(tmpdir, '.claude')
+      FileUtils.mkdir_p(settings_dir)
+      File.write(File.join(settings_dir, 'settings.json'),
+                 JSON.pretty_generate({ 'permissions' => { 'allow' => ['Bash(git*)'] } }))
+
+      installer.run
+
+      settings = JSON.parse(File.read(File.join(settings_dir, 'settings.json')))
+      expect(settings['permissions']['allow']).to include('Bash(git*)')
+      expect(settings['permissions']['allow']).to include('Bash(agent-hook-validator*)')
+    end
+
+    it 'does not duplicate permission if already present' do
+      settings_dir = File.join(tmpdir, '.claude')
+      FileUtils.mkdir_p(settings_dir)
+      File.write(File.join(settings_dir, 'settings.json'),
+                 JSON.pretty_generate({ 'permissions' => { 'allow' => ['Bash(agent-hook-validator*)'] } }))
+
+      installer.run
+
+      settings = JSON.parse(File.read(File.join(settings_dir, 'settings.json')))
+      count = settings['permissions']['allow'].count('Bash(agent-hook-validator*)')
+      expect(count).to eq(1)
+    end
+
     it 'overwrites existing validate.md' do
       commands_dir = File.join(tmpdir, '.claude', 'commands')
       FileUtils.mkdir_p(commands_dir)

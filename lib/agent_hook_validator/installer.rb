@@ -48,6 +48,17 @@ module AgentHookValidator
       FileUtils.mkdir_p(commands_dir)
       FileUtils.cp(source, File.join(commands_dir, 'validate.md'))
       log "Installed /validate command in #{commands_dir}/validate.md"
+
+      settings_path = File.join(project_dir, '.claude', 'settings.json')
+      settings = read_json_settings(settings_path)
+      permissions = settings['permissions'] ||= {}
+      allow_list = permissions['allow'] ||= []
+      permission = 'Bash(agent-hook-validator*)'
+      unless allow_list.include?(permission)
+        allow_list << permission
+        write_json_settings(settings_path, settings)
+        log "Added Bash permission for agent-hook-validator in #{settings_path}"
+      end
     end
 
     def install_gemini

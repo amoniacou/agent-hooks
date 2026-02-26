@@ -101,6 +101,69 @@ RSpec.describe AgentHookValidator::Config do
     end
   end
 
+  describe '#merge_project_config' do
+    let(:project_dir) { Dir.mktmpdir }
+
+    after { FileUtils.rm_rf(project_dir) }
+
+    context 'when project config exists' do
+      before do
+        File.write(File.join(project_dir, '.agent-hook-validator.yml'), <<~YAML)
+          agent:
+            name: claude
+        YAML
+      end
+
+      it 'merges project config over current config' do
+        config = described_class.load(nil)
+        merged = config.merge_project_config(project_dir)
+
+        expect(merged.dig('agent', 'name')).to eq('claude')
+        expect(merged.dig('agent', 'timeout_seconds')).to eq(300)
+        expect(merged.dig('git', 'diff_mode')).to eq('head')
+      end
+    end
+
+    context 'when project config adds exclude_patterns' do
+      before do
+        File.write(File.join(project_dir, '.agent-hook-validator.yml'), <<~YAML)
+          git:
+            exclude_patterns:
+              - "*.generated.ts"
+        YAML
+      end
+
+      it 'unions project patterns with default patterns' do
+        config = described_class.load(nil)
+        merged = config.merge_project_config(project_dir)
+
+        patterns = merged.dig('git', 'exclude_patterns')
+        expect(patterns).to include('*.lock', '*.min.js', 'vendor/**', '*.generated.ts')
+      end
+    end
+
+    context 'when project config does not exist' do
+      it 'returns self unchanged' do
+        config = described_class.load(nil)
+        result = config.merge_project_config(project_dir)
+
+        expect(result).to be(config)
+      end
+    end
+
+    context 'when project config has invalid YAML' do
+      before do
+        File.write(File.join(project_dir, '.agent-hook-validator.yml'), "invalid: yaml: {{{")
+      end
+
+      it 'raises ConfigLoadError' do
+        config = described_class.load(nil)
+        expect { config.merge_project_config(project_dir) }
+          .to raise_error(AgentHookValidator::ConfigLoadError, /Invalid project YAML config/)
+      end
+    end
+  end
+
   describe '#dig' do
     it 'accesses nested values' do
       config = described_class.load(nil)
@@ -113,6 +176,85 @@ RSpec.describe AgentHookValidator::Config do
       config = described_class.load(nil)
       expect(config['agent']).to be_a(Hash)
       expect(config['agent']['name']).to eq('gemini')
+    end
+  end
+
+  describe '#agent_entries' do
+    context 'with default config (agent.name only)' do
+      it 'returns single entry with agent name and timeout' do
+        config = described_class.load(nil)
+        expect(config.agent_entries).to eq([{ name: 'gemini', timeout: 300 }])
+      end
+    end
+
+    context 'with agents array and per-agent timeouts' do
+      it 'returns entries with per-agent timeouts' do
+        config = described_class.new(
+          'agent' => { 'name' => 'gemini', 'timeout_seconds' => 120 },
+          'agents' => [
+            { 'name' => 'claude', 'timeout_seconds' => 60 },
+            { 'name' => 'gemini', 'timeout_seconds' => 600 }
+          ]
+        )
+        expect(config.agent_entries).to eq([
+          { name: 'claude', timeout: 60 },
+          { name: 'gemini', timeout: 600 }
+        ])
+      end
+    end
+
+    context 'with agents array without per-agent timeouts' do
+      it 'falls back to global agent timeout' do
+        config = described_class.new(
+          'agent' => { 'name' => 'gemini', 'timeout_seconds' => 200 },
+          'agents' => [
+            { 'name' => 'claude' },
+            { 'name' => 'openai' }
+          ]
+        )
+        expect(config.agent_entries).to eq([
+          { name: 'claude', timeout: 200 },
+          { name: 'openai', timeout: 200 }
+        ])
+      end
+    end
+
+    context 'with agents array taking priority over agent' do
+      it 'uses agents array when both are present' do
+        config = described_class.new(
+          'agent' => { 'name' => 'gemini', 'timeout_seconds' => 300 },
+          'agents' => [{ 'name' => 'claude', 'timeout_seconds' => 120 }]
+        )
+        expect(config.agent_entries).to eq([{ name: 'claude', timeout: 120 }])
+      end
+    end
+
+    context 'with empty agents array' do
+      it 'falls back to single agent from agent.name' do
+        config = described_class.new(
+          'agent' => { 'name' => 'claude', 'timeout_seconds' => 100 },
+          'agents' => []
+        )
+        expect(config.agent_entries).to eq([{ name: 'claude', timeout: 100 }])
+      end
+    end
+  end
+
+  describe '#agent_names' do
+    it 'returns array of agent names' do
+      config = described_class.new(
+        'agent' => { 'name' => 'gemini', 'timeout_seconds' => 120 },
+        'agents' => [
+          { 'name' => 'claude', 'timeout_seconds' => 60 },
+          { 'name' => 'gemini', 'timeout_seconds' => 600 }
+        ]
+      )
+      expect(config.agent_names).to eq(%w[claude gemini])
+    end
+
+    it 'returns single name for single agent config' do
+      config = described_class.load(nil)
+      expect(config.agent_names).to eq(['gemini'])
     end
   end
 end

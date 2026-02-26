@@ -4,7 +4,7 @@ Review the current code changes using an AI agent validator.
 
 Validation output:
 
-!`agent-hook-validator -a $ARGUMENTS`
+!`agent-hook-validator -v -a $ARGUMENTS`
 
 Analyze the validation output above and provide:
 1. Summary of findings — what passed and what failed

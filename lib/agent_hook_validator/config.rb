@@ -20,6 +20,8 @@ module AgentHookValidator
       }
     }.freeze
 
+    PROJECT_CONFIG_NAME = '.agent-hook-validator.yml'
+
     attr_reader :data
 
     def initialize(data)
@@ -49,6 +51,34 @@ module AgentHookValidator
       @data[key]
     end
 
+    def agent_entries
+      agents = @data['agents']
+      default_timeout = dig('agent', 'timeout_seconds') || 120
+
+      if agents.is_a?(Array) && !agents.empty?
+        agents.map do |a|
+          { name: a['name'], timeout: a['timeout_seconds'] || default_timeout }
+        end
+      else
+        name = dig('agent', 'name') || 'gemini'
+        [{ name: name, timeout: default_timeout }]
+      end
+    end
+
+    def agent_names
+      agent_entries.map { |e| e[:name] }
+    end
+
+    def merge_project_config(cwd)
+      project_path = File.join(cwd, PROJECT_CONFIG_NAME)
+      return self unless File.exist?(project_path)
+
+      raw = YAML.safe_load_file(project_path) || {}
+      self.class.new(self.class.deep_merge(@data, raw))
+    rescue Psych::SyntaxError => e
+      raise ConfigLoadError, "Invalid project YAML config: #{e.message}"
+    end
+
     private_class_method def self.resolve_path(path)
       return path if path
 
@@ -61,11 +91,15 @@ module AgentHookValidator
       nil
     end
 
-    private_class_method def self.deep_merge(base, override)
+    protected
+
+    def self.deep_merge(base, override)
       base.each_with_object({}) do |(key, base_val), result|
         result[key] = if override.key?(key)
                         if base_val.is_a?(Hash) && override[key].is_a?(Hash)
                           deep_merge(base_val, override[key])
+                        elsif base_val.is_a?(Array) && override[key].is_a?(Array)
+                          (base_val | override[key])
                         else
                           override[key]
                         end

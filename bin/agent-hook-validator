@@ -4,12 +4,12 @@
 require 'optparse'
 require_relative '../lib/agent_hook_validator'
 
-options = { agent: nil, template: nil, config: nil }
+options = { agent: nil, template: nil, config: nil, verbose: false }
 
 OptionParser.new do |opts|
   opts.banner = 'Usage: agent-hook-validator [options]'
 
-  opts.on('-a', '--agent NAME', 'Agent name (claude, openai, etc.)') do |a|
+  opts.on('-a', '--agent NAME', 'Agent name(s), comma-separated (e.g. gemini,claude)') do |a|
     options[:agent] = a
   end
 
@@ -19,6 +19,10 @@ OptionParser.new do |opts|
 
   opts.on('-c', '--config PATH', 'Path to YAML config file') do |c|
     options[:config] = File.expand_path(c)
+  end
+
+  opts.on('-v', '--verbose', 'Print diagnostic messages to stderr') do
+    options[:verbose] = true
   end
 
   opts.on('-h', '--help', 'Prints this help') do

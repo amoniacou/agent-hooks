@@ -12,14 +12,22 @@ require_relative 'agent_hook_validator/response_evaluator'
 module AgentHookValidator
   class Runner
     def initialize(options, stdin: $stdin, stdout: $stdout, stderr: $stderr, log: nil)
+      @options = options
       @config = Config.load(options[:config])
-      @agent_name = options[:agent] || @config.dig('agent', 'name')
+      @agent_entries = if options[:agent]
+                         timeout = @config.dig('agent', 'timeout_seconds') || 120
+                         options[:agent].split(',').map(&:strip).map do |name|
+                           { name: name, timeout: timeout }
+                         end
+                       else
+                         @config.agent_entries
+                       end
       @template_path = options[:template] || default_template_path
-      @timeout = @config.dig('agent', 'timeout_seconds') || 120
       @stdin = stdin
       @stdout = stdout
       @stderr = stderr
       @log = log
+      @verbose = options[:verbose] || false
       @exit_code = 0
     end
 
@@ -52,15 +60,35 @@ module AgentHookValidator
     private
 
     def parse_input?
-      input_data = @stdin.read
-      return false if input_data.nil? || input_data.empty?
+      input_data = read_stdin
+      if input_data.nil? || input_data.empty?
+        @input = {}
+        @cwd = resolve_cwd
+        apply_project_config
+        return true
+      end
 
       @input = JSON.parse(input_data)
       @cwd = resolve_cwd
+      apply_project_config
       true
     rescue JSON::ParserError => e
       log "Invalid JSON input: #{e.message}"
+      output_allow("Validator error: invalid JSON input")
       false
+    end
+
+    def read_stdin
+      return nil if @stdin.tty?
+
+      @stdin.read
+    rescue Errno::ENOENT
+      nil
+    end
+
+    def apply_project_config
+      @config = @config.merge_project_config(@cwd)
+      @agent_entries = @config.agent_entries unless @options[:agent]
     end
 
     def prepare_changed_files
@@ -73,20 +101,90 @@ module AgentHookValidator
     def validate_with_agent(changed_files)
       raise TemplateNotFound, "Template not found: #{@template_path}" unless File.exist?(@template_path)
 
-      log "Using agent: #{@agent_name}"
       prompt = TemplateRenderer.render(@template_path, changed_files)
-      summary = AgentFactory.build(@agent_name, timeout: @timeout).call(prompt)
-
       min_score = @config.dig('decision', 'min_quality_score') || ResponseEvaluator::DEFAULT_MIN_QUALITY_SCORE
+
+      if @agent_entries.size == 1
+        validate_single_agent(@agent_entries.first, prompt, min_score)
+      else
+        validate_multiple_agents(prompt, min_score)
+      end
+    end
+
+    def validate_single_agent(entry, prompt, min_score)
+      log "Using agent: #{entry[:name]}"
+      summary = AgentFactory.build(entry[:name], timeout: entry[:timeout]).call(prompt)
       evaluator = ResponseEvaluator.new(summary, min_quality_score: min_score)
 
       if evaluator.block?
         log "Issues found: #{evaluator.reasons.join(', ')}"
-        output_block("AgentHookValidator (#{@agent_name}) found issues:\n\n#{summary}")
+        output_block("AgentHookValidator (#{entry[:name]}) found issues:\n\n#{summary}")
       else
         log 'Validation successful.'
-        output_allow("#{@agent_name.capitalize} Review Summary:\n\n#{summary}")
+        output_allow("#{entry[:name].capitalize} Review Summary:\n\n#{summary}")
       end
+    end
+
+    def validate_multiple_agents(prompt, min_score)
+      log "Using agents: #{agent_names.join(', ')}"
+      results = run_agents_in_parallel(prompt)
+
+      successful = results.select { |r| r[:summary] }
+      failed = results.select { |r| r[:error] }
+      merged = format_merged_summary(results)
+
+      block_on_failure = @config.dig('decision', 'block_on_agent_failure')
+
+      if block_on_failure && failed.any?
+        log "Agent errors: #{failed.map { |r| "#{r[:agent]} - #{r[:error]}" }.join(', ')}"
+        output_block("AgentHookValidator found agent errors:\n\n#{merged}")
+        return
+      end
+
+      if successful.empty?
+        log 'All agents failed, allowing (fail-open).'
+        output_allow("All agents failed:\n\n#{merged}")
+        return
+      end
+
+      any_block = successful.any? { |r| r[:evaluator].block? }
+
+      if any_block
+        blocking = successful.select { |r| r[:evaluator].block? }
+        blocking.each do |r|
+          log "Issues found by #{r[:agent]}: #{r[:evaluator].reasons.join(', ')}"
+        end
+        output_block("AgentHookValidator found issues:\n\n#{merged}")
+      else
+        log 'Validation successful.'
+        output_allow("Multi-Agent Review Summary:\n\n#{merged}")
+      end
+    end
+
+    def run_agents_in_parallel(prompt)
+      threads = @agent_entries.map do |entry|
+        Thread.new do
+          summary = AgentFactory.build(entry[:name], timeout: entry[:timeout]).call(prompt)
+          evaluator = ResponseEvaluator.new(summary, min_quality_score:
+            @config.dig('decision', 'min_quality_score') || ResponseEvaluator::DEFAULT_MIN_QUALITY_SCORE)
+          { agent: entry[:name], summary: summary, evaluator: evaluator }
+        rescue AgentExecutionError, AgentTimeoutError => e
+          { agent: entry[:name], error: e.message }
+        end
+      end
+      threads.map(&:value)
+    end
+
+    def format_merged_summary(results)
+      results.map do |r|
+        header = "## #{r[:agent].capitalize} Review"
+        body = r[:summary] || "Error: #{r[:error]}"
+        "#{header}\n\n#{body}"
+      end.join("\n\n---\n\n")
+    end
+
+    def agent_names
+      @agent_entries.map { |e| e[:name] }
     end
 
     def handle_agent_error(error)
@@ -111,18 +209,26 @@ module AgentHookValidator
     def fetch_changed_files
       diff_mode = @config.dig('git', 'diff_mode') || 'head'
 
-      case diff_mode
-      when 'cached'
-        out, = Open3.capture3('git', 'diff', '--name-only', '--cached', chdir: @cwd)
-        out.split("\n")
-      when 'combined'
-        cached, = Open3.capture3('git', 'diff', '--name-only', '--cached', chdir: @cwd)
-        unstaged, = Open3.capture3('git', 'diff', '--name-only', chdir: @cwd)
-        (cached.split("\n") | unstaged.split("\n"))
-      else
-        out, = Open3.capture3('git', 'diff', '--name-only', 'HEAD', chdir: @cwd)
-        out.split("\n")
-      end
+      tracked = case diff_mode
+                when 'cached'
+                  out, _err, status = Open3.capture3('git', 'diff', '--name-only', '--cached', chdir: @cwd)
+                  log "git diff --cached failed: #{_err}" unless status.success?
+                  out.split("\n")
+                when 'combined'
+                  cached, _err1, status1 = Open3.capture3('git', 'diff', '--name-only', '--cached', chdir: @cwd)
+                  log "git diff --cached failed: #{_err1}" unless status1.success?
+                  unstaged, _err2, status2 = Open3.capture3('git', 'diff', '--name-only', chdir: @cwd)
+                  log "git diff failed: #{_err2}" unless status2.success?
+                  (cached.split("\n") | unstaged.split("\n"))
+                else
+                  out, _err, status = Open3.capture3('git', 'diff', '--name-only', 'HEAD', chdir: @cwd)
+                  log "git diff HEAD failed: #{_err}" unless status.success?
+                  out.split("\n")
+                end
+
+      untracked, _err, status = Open3.capture3('git', 'ls-files', '--others', '--exclude-standard', chdir: @cwd)
+      log "git ls-files failed: #{_err}" unless status.success?
+      (tracked | untracked.split("\n"))
     end
 
     def filter_changed_files(changed_files)
@@ -156,8 +262,9 @@ module AgentHookValidator
     end
 
     def log(msg)
-      @log_file ||= @log || open_log_file
-      @log_file.puts("[Agent Validator] #{msg}")
+      @log_file ||= @log || open_log_file || :none
+      @log_file.puts("[Agent Validator] #{msg}") unless @log_file == :none
+      @stderr.puts("[Agent Validator] #{msg}") if @verbose
     rescue IOError, SystemCallError
       # Logging failure should not crash the validator
       nil
@@ -166,11 +273,13 @@ module AgentHookValidator
     def open_log_file
       path = File.join(@cwd || Dir.pwd, '.agent-hook-validator.log')
       File.open(path, 'a')
+    rescue IOError, SystemCallError
+      nil
     end
 
     def close_log_file
       return unless @log_file
-      return if @log_file == @log
+      return if @log_file == @log || @log_file == :none
 
       @log_file.close unless @log_file.closed?
     end
